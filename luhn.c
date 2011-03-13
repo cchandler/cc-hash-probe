@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-int test(unsigned int *num1, unsigned int *num2);
+#include "gpu.h"
 
 unsigned int luhnOnPacked(unsigned long num){
 	int len = 15;
@@ -56,38 +56,47 @@ unsigned long unBitPackCC(unsigned long num){
 int main(){
 	// unsigned long start_point = 4425180000000000; //4,425,180,000,000,000
 	unsigned long start_point = 4111111111111111;
-	unsigned long result = bitPackCC(start_point);
 	
-	int size = 1;
+	setupCUDA();
+	
+	int size = 1024;
 	unsigned int *vector1 = (unsigned int*)malloc(sizeof(int) * size);
 	unsigned int *vector2 = (unsigned int*)malloc(sizeof(int) * size);
+	unsigned int *valid = (unsigned int*)malloc(sizeof(int) * size);
 	
-	// int i = 0;
-	// for(i = 0; i < size; i++){
+	int i = 0;
+	int j = 0;
+	// for(j = 0; j< 10240000; j++) {
 	// 	unsigned long result = bitPackCC(start_point);
-	// 	++start_point;
-	// 	unsigned int chunk1 = 0;
-	// 	unsigned int chunk2 = 0;
-	// 	
-	// 	chunk2 = result & 0xFFFFFFFF;
-	// 	result = result >> 32;
-	// 	chunk1 = result & 0xFFFFFFFF;
-	// 	
-	// 	vector1[i] = chunk1;
-	// 	vector2[i] = chunk2;
+	// 	luhnOnPacked(result);
 	// }
 	
-	unsigned int chunk1 = 0;
-	unsigned int chunk2 = 0;
-
-	// printf("Result %lu\n",result);
-	chunk2 = result & 0xFFFFFFFF;
-	// printf("Chunk 2 %d\n",chunk2);
-	result = result >> 32;
-	chunk1 = result & 0xFFFFFFFF;
-	// printf("Chunk 1 %d\n",chunk1);
+	for(j = 0; j < 1; j++)
+	{
+		for(i = 0; i < size; i++){
+			unsigned long result = bitPackCC(start_point);
+			// unsigned long result = 0;
+			++start_point;
+			unsigned int chunk1 = 0;
+			unsigned int chunk2 = 0;
+		
+			chunk2 = result & 0xFFFFFFFF;
+			result = result >> 32;
+			chunk1 = result & 0xFFFFFFFF;
+		
+			vector1[i] = chunk1;
+			vector2[i] = chunk2;
+		}
 	
-	// test(vector1,vector2);
-	test(&chunk1,&chunk2);
+		// unsigned int chunk1 = 0;
+		// unsigned int chunk2 = 0;
+		// 
+		// chunk2 = result & 0xFFFFFFFF;
+		// result = result >> 32;
+		// chunk1 = result & 0xFFFFFFFF;
+	
+		test(vector1,vector2,valid);
+	}
+	// test(&chunk1,&chunk2);
 	return 0;
 }
