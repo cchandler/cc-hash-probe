@@ -4,6 +4,17 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
+/*
+
+High performance credit card hash probe using GPU.  Borrowed segments of Steve Worley's
+SHA1 function from the EngineYard contest.
+
+Thanks:
+Steve Worley < m a t h g e e k@(my last name).com >
+*/
+
+
+
 #define SIZE     1024
 unsigned int *d_num1;
 unsigned int *d_num2;
@@ -25,7 +36,9 @@ __host__ __device__ unsigned int swapends(unsigned int v)
     ((255&(v>>24))<<0);
 }
 
-/* We don't want to precompute and store all 80 w array
+/* 
+   From Steve's notes:
+   We don't want to precompute and store all 80 w array
    values. Instead we store only the next 16 values and update them in
    a logrolling array. Complicated but it means we can fit the tables
    in shared memory */
@@ -41,7 +54,6 @@ __device__ unsigned int popNextW(unsigned int *w, int &wIndex)
   return nextW;
 }
 
-/* same as above but we don't need to compute more of the table  at the end. */
 __device__ unsigned int popFinalWs(unsigned int *w, int &wIndex)
 {
   unsigned int nextW=w[wIndex&15];
@@ -59,34 +71,15 @@ __device__ int generateHash(unsigned int *hash){
 	d_initVector[4] = 0xC3D2E1F0;
 	
 	// unsigned int *w=fullw+17*threadIdx.x; // spaced by 17 to avoid bank conflicts, CC: I don't think this is relevant...
-	// for (int i=0; i<16; ++i) w[i]='\0'; // Zeroing out the prep string
-	// int wIndex=0;
 	
-	// unsigned int w[80]={   'a','a','a','a','a','a','a','a','a','a','a','a',
-	//                     'a','a','a','a',0};
-	
-	// for (int i=0; i<16; ++i) w[i]='a';
 	unsigned int w[80] = {'\0'};
 	for (int i=0; i<80; i++) { w[i] = '\0'; };
-	w[0] = 1633837952;
-	w[15] = 24;
+	w[0] = 1633837952; // 'abc' + 1 bit
+	w[15] = 24; // "padded" 0s and the size in bits
 	
 	int wIndex=0;
 	
-	// for (int i=0; i<16; i++) w[i]=swapends(w[i]);
-
-	for (int i=16; i<80; i++) {
-	  w[i]=w[i-3]^w[i-8]^w[i-14]^w[i-16];
-	  w[i]=(w[i]<<1)|(w[i]>>31);
-	}
-
-	// unsigned int a = initVector[0];
-	// unsigned int b = initVector[1];
-	// unsigned int c = initVector[2];
-	// unsigned int d = initVector[3];
-	// unsigned int e = initVector[4];
 	
-	for(int j = 0; j < 1; j++){
 	unsigned int a = d_initVector[0];
 	unsigned int b = d_initVector[1];
     unsigned int c = d_initVector[2];
@@ -172,7 +165,7 @@ __device__ int generateHash(unsigned int *hash){
 	d_initVector[2] = c;
 	d_initVector[3] = d;
 	d_initVector[4] = e;
-	}
+	
 
 	hash[0] = d_initVector[0];
 	hash[1] = d_initVector[1];
@@ -278,7 +271,7 @@ int setupCUDA(){
 		cudaMemcpy2D(d_num1,d_num1_pitch, num1, sizeof(int) * SIZE, SIZE * sizeof(int), 1, cudaMemcpyHostToDevice);
 		cudaMemcpy2D(d_num2,d_num2_pitch, num2, sizeof(int) * SIZE, SIZE * sizeof(int), 1, cudaMemcpyHostToDevice);
 	
-		GPULuhn<<< 1 , 1 >>>(d_num1,d_num2,d_valid, d_valid_pitch, d_hash);
+		GPULuhn<<< 1 , 32 >>>(d_num1,d_num2,d_valid, d_valid_pitch, d_hash);
 		cudaThreadSynchronize();
 		
 		int error = 0;
