@@ -24,8 +24,8 @@ unsigned int* d_valid;
 unsigned int* d_hash;
 
 
-// __shared__ unsigned int initVector[5];
-__device__ unsigned int d_initVector[5];
+__shared__ unsigned int initVector[5];
+// __device__ unsigned int d_initVector[5];
 
 __host__ __device__ unsigned int swapends(unsigned int v) 
 {
@@ -61,9 +61,12 @@ __device__ unsigned int popFinalWs(unsigned int *w, int &wIndex)
   return nextW;
 }
 
-__device__ int generateHash(unsigned int *hash){
+__device__ int generateHash(unsigned int num1, unsigned int num2, unsigned int *hash){
 	extern __shared__ unsigned int fullw[];
 	
+	int hash_offset = threadIdx.x + blockIdx.x * blockDim.x;
+	
+	unsigned int d_initVector[5];
 	d_initVector[0] = 0x67452301;
 	d_initVector[1] = 0xEFCDAB89;
 	d_initVector[2] = 0x98BADCFE;
@@ -71,11 +74,66 @@ __device__ int generateHash(unsigned int *hash){
 	d_initVector[4] = 0xC3D2E1F0;
 	
 	// unsigned int *w=fullw+17*threadIdx.x; // spaced by 17 to avoid bank conflicts, CC: I don't think this is relevant...
+	char lookup_table[10] = {'0','1','2','3','4','5','6',55,56,57};
+	int pos = 0;
+	// int i = 0;
+	int digit = 0;
+	unsigned int num_1a = 0;
+	unsigned int num_2a = 0;
+	unsigned int num_3a = 0;
+	unsigned int num_4a = 0;
+	
+	#pragma unroll 999
+	for(pos = 0; pos <= 3; ++pos) {
+		digit = 0;
+		digit = num2 & (0xF << (pos * 4));
+		digit = digit >> (pos * 4);
+		
+		num_1a = num_1a | lookup_table[digit];
+		if(pos != 3) {num_1a = num_1a << 8;};
+	}
+	
+	#pragma unroll 999
+	for(pos = 4; pos <= 7; ++pos) {
+		digit = 0;
+		digit = num2 & (0xF << (pos * 4));
+		digit = digit >> (pos * 4);
+		
+		num_2a = num_2a | lookup_table[digit];
+		if(pos != 7) {num_2a = num_2a << 8;};
+	}
+	
+	#pragma unroll 999
+	for(pos = 0; pos <= 3; ++pos) {
+		digit = 0;
+		digit = num1 & (0xF << (pos * 4));
+		digit = digit >> (pos * 4);
+		
+		num_3a = num_3a | lookup_table[digit];
+		if(pos != 3) {num_3a = num_3a << 8;};
+	}
+	
+	#pragma unroll 999
+	for(pos = 4; pos <= 7; ++pos) {
+		digit = 0;
+		digit = num1 & (0xF << (pos * 4));
+		digit = digit >> (pos * 4);
+		
+		num_4a = num_4a | lookup_table[digit];
+		if(pos != 7) {num_4a = num_4a << 8;};
+	}
+	
 	
 	unsigned int w[80] = {'\0'};
 	for (int i=0; i<80; i++) { w[i] = '\0'; };
-	w[0] = 1633837952; // 'abc' + 1 bit
-	w[15] = 24; // "padded" 0s and the size in bits
+	// w[0] = 1633837952; // 'abc' + 1 bit
+	// num_1a = num_1a << 8;
+	w[0] = num_1a;
+	w[1] = num_2a;
+	w[2] = num_3a;
+	w[3] = num_4a;
+	w[4] = (unsigned) 8 << 28;
+	w[15] = 128;
 	
 	int wIndex=0;
 	
@@ -154,24 +212,11 @@ __device__ int generateHash(unsigned int *hash){
 	  a=temp;
 	}
 	
-	a = a + d_initVector[0];
-	b = b + d_initVector[1];
-	c = c + d_initVector[2];
-	d = d + d_initVector[3];
-	e = e + d_initVector[4];
-	
-	d_initVector[0] = a;
-	d_initVector[1] = b;
-	d_initVector[2] = c;
-	d_initVector[3] = d;
-	d_initVector[4] = e;
-	
-
-	hash[0] = d_initVector[0];
-	hash[1] = d_initVector[1];
-	hash[2] = d_initVector[2];
-	hash[3] = d_initVector[3];
-	hash[4] = d_initVector[4];
+	hash[hash_offset*5 + 0] = a + d_initVector[0];
+	hash[hash_offset*5 + 1] = b + d_initVector[1];
+	hash[hash_offset*5 + 2] = c + d_initVector[2];
+	hash[hash_offset*5 + 3] = d + d_initVector[3];
+	hash[hash_offset*5 + 4] = e + d_initVector[4];
 	
 	return 0;
 }
@@ -191,9 +236,8 @@ __device__ unsigned long GPUbitPackCC(unsigned long num){
 
 __global__ void GPULuhn(unsigned int *num1, unsigned int *num2,unsigned int *valid, size_t valid_pitch, unsigned int *hash){
 	int i = threadIdx.x + blockIdx.x * blockDim.x;
-	// GPUbitPackCC(4111111111111111);
+	// GPUbitPackCC(4111111111111111UL);
 	// int i = 0;
-	generateHash(hash);
 	
 	int pos = 0;
 	unsigned int digit = 0;
@@ -203,8 +247,10 @@ __global__ void GPULuhn(unsigned int *num1, unsigned int *num2,unsigned int *val
 	
 	//Setup strided memory with correct pitch
 	int* valid_row = (int*)((char*)valid + 0 * valid_pitch); // 0 is the height offset. zero right now because it's essentially linear
-	int* num1_row = (int*)((char*)num1 + 0 * valid_pitch);
-	int* num2_row = (int*)((char*)num2 + 0 * valid_pitch);
+	unsigned int* num1_row = (unsigned int*)((char*)num1 + 0 * valid_pitch);
+	unsigned int* num2_row = (unsigned int*)((char*)num2 + 0 * valid_pitch);
+	
+	generateHash(num1_row[i],num2_row[i],hash);
 	
 	for(pos = 7; pos >= 0; --pos) {
 		digit = 0;
@@ -271,7 +317,7 @@ int setupCUDA(){
 		cudaMemcpy2D(d_num1,d_num1_pitch, num1, sizeof(int) * SIZE, SIZE * sizeof(int), 1, cudaMemcpyHostToDevice);
 		cudaMemcpy2D(d_num2,d_num2_pitch, num2, sizeof(int) * SIZE, SIZE * sizeof(int), 1, cudaMemcpyHostToDevice);
 	
-		GPULuhn<<< 1 , 32 >>>(d_num1,d_num2,d_valid, d_valid_pitch, d_hash);
+		GPULuhn<<< 5 , 128 >>>(d_num1,d_num2,d_valid, d_valid_pitch, d_hash);
 		cudaThreadSynchronize();
 		
 		int error = 0;
@@ -301,16 +347,17 @@ int setupCUDA(){
 
 		int i =0;
 		for(i = 0; i < 256; i++){
-			if(h_valid[i]){
-				printf("%d --- Chunk1 %u Chunk2 %u Valid %u\n",i, num1[i],num2[i], h_valid[i]);
-				printf("\tHash: %08x %08x %08x %08x %08x\n", h_hash[0],h_hash[1],h_hash[2],h_hash[3],h_hash[4]);
+			// if(h_valid[i]){
+				printf("%d --- Chunk1 %08x %08x  Valid %u\n",i, num2[i],num1[i], h_valid[i]);
+				printf("\tHash: %08x %08x %08x %08x %08x\n", h_hash[0 + i*5],h_hash[1 + i*5],h_hash[2 + i*5],h_hash[3 + i*5],h_hash[4 + i*5]);
 				// printf("Chunk1 %u Chunk2 %u Valid %u\n",num1[i],num2[i], *(h_valid + i * d_valid_stride));
-			}
+			// }
 		}
 		
-		cudaFree(&d_num1);
-		cudaFree(&d_num2);
-		cudaFree(&d_valid);
+		cudaFree(d_num1);
+		cudaFree(d_num2);
+		cudaFree(d_valid);
+		cudaFree(d_hash);
 		
 		error = 0;
 		if(error){
