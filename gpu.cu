@@ -74,10 +74,9 @@ __device__ int generateHash(unsigned int num1, unsigned int num2, unsigned int *
 	d_initVector[4] = 0xC3D2E1F0;
 	
 	// unsigned int *w=fullw+17*threadIdx.x; // spaced by 17 to avoid bank conflicts, CC: I don't think this is relevant...
-	char lookup_table[10] = {'0','1','2','3','4','5','6',55,56,57};
+	char lookup_table[10] = {48,49,50,51,52,53,54,55,56,57};
 	int pos = 0;
-	// int i = 0;
-	int digit = 0;
+	unsigned int digit = 0;
 	unsigned int num_1a = 0;
 	unsigned int num_2a = 0;
 	unsigned int num_3a = 0;
@@ -347,11 +346,10 @@ int setupCUDA(){
 
 		int i =0;
 		for(i = 0; i < 256; i++){
-			// if(h_valid[i]){
+			if(h_valid[i]){
 				printf("%d --- Chunk1 %08x %08x  Valid %u\n",i, num2[i],num1[i], h_valid[i]);
 				printf("\tHash: %08x %08x %08x %08x %08x\n", h_hash[0 + i*5],h_hash[1 + i*5],h_hash[2 + i*5],h_hash[3 + i*5],h_hash[4 + i*5]);
-				// printf("Chunk1 %u Chunk2 %u Valid %u\n",num1[i],num2[i], *(h_valid + i * d_valid_stride));
-			// }
+			}
 		}
 		
 		cudaFree(d_num1);

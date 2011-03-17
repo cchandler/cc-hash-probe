@@ -55,8 +55,9 @@ unsigned long unBitPackCC(unsigned long num){
 
 int main(){
 	// unsigned long start_point = 4425180000000000; //4,425,180,000,000,000
-	// unsigned long start_point = 4111111111111111;
-	unsigned long start_point =    1000000000000008;
+	unsigned long start_point = 4111111111111111;
+	// unsigned long start_point =    1000000000000008;
+	// unsigned long start_point =    7;
 	
 	setupCUDA();
 	
