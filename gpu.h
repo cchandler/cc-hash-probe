@@ -1,6 +1,10 @@
 
+const int blocksize = 52084;
+const int threadsize = 192;
+// const int data_size = 10000128;
+
 int setupCUDA();
-int test(unsigned int *num1, unsigned int *num2,unsigned int *valid);
+int test(unsigned long *intervals, unsigned int *num1, unsigned int *num2,unsigned int *valid);
 unsigned int swapends(unsigned int v);
 
 typedef struct{

@@ -1,8 +1,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <math.h>
 
 #include "gpu.h"
+
+#define SIZE     10000128
 
 int regularGenerateHash(unsigned int num1, unsigned int num2, unsigned int *hash){
 	unsigned int fullw[50];
@@ -197,40 +200,40 @@ unsigned long bitPackCC(unsigned long num){
 	return result;
 }
 
-void bitPackCC_32(unsigned int num_msd, unsigned int num_lsd, unsigned int* output){
-	int i = 0;
-	unsigned int digit = 0;
-	unsigned long result = 0;
-	
-	unsigned long unified = num_msd;
-	unified = unified << 32;
-	unified = unified | num_lsd;
-	
-	for(i = 15; i >= 0; --i){
-		digit = unified % 10;
-		unified = unified / 10;
-		result = result << 4;
-		result = result | digit;
-	}
-	
-	output[1] = 0xFFFFFFFF & result;
-	result = result >> 32;
-	output[0] = 0xFFFFFFFF & result;
-}
+// void bitPackCC_32(unsigned int num_msd, unsigned int num_lsd, unsigned int* output){
+// 	int i = 0;
+// 	unsigned int digit = 0;
+// 	unsigned long result = 0;
+// 	
+// 	unsigned long unified = num_msd;
+// 	unified = unified << 32;
+// 	unified = unified | num_lsd;
+// 	
+// 	for(i = 15; i >= 0; --i){
+// 		digit = unified % 10;
+// 		unified = unified / 10;
+// 		result = result << 4;
+// 		result = result | digit;
+// 	}
+// 	
+// 	output[1] = 0xFFFFFFFF & result;
+// 	result = result >> 32;
+// 	output[0] = 0xFFFFFFFF & result;
+// }
 
-unsigned long unBitPackCC(unsigned long num){
-	int i = 0;
-	int digit = 0;
-	unsigned long result = 0;
-	for(i = 15; i >= 0; --i){
-		digit = num & 15;
-		printf("%d\n",digit);
-		result << 4;
-		result = result | digit;
-		num = num >> 4;
-	}
-	return result;
-}
+// unsigned long unBitPackCC(unsigned long num){
+// 	int i = 0;
+// 	int digit = 0;
+// 	unsigned long result = 0;
+// 	for(i = 15; i >= 0; --i){
+// 		digit = num & 15;
+// 		printf("%d\n",digit);
+// 		result << 4;
+// 		result = result | digit;
+// 		num = num >> 4;
+// 	}
+// 	return result;
+// }
 
 void incrementNumber(unsigned int *msd, unsigned int *lsd){
 	unsigned int lsd_temp;
@@ -241,20 +244,36 @@ void incrementNumber(unsigned int *msd, unsigned int *lsd){
 	*lsd = lsd_temp;
 }
 
-int main(){
-	// unsigned long start_point = 4111111111111111;
+unsigned long* divide_hash_space(unsigned long start, unsigned long end) {
+	unsigned long total = end - start;
+	unsigned long chunk = floor(total / blocksize);
 	
+	unsigned long *intervals = (unsigned long*)malloc(sizeof(long) * blocksize);
+	int i = 0;
+	for(; i < blocksize; ++i){
+		intervals[i] = start + chunk * i;
+	}
+	return intervals;
+}
+
+int main(){
+	//Setup the start points and ends points.
+	//The longs are for easier host side computing and the msd/lsd WORDs are for
+	//easier computing on the CUDA device.
+	unsigned long start_point = 4111111111111111;
+	unsigned long end_point =      4111999999999999;
 	unsigned int start_point_msd = 957192;
 	unsigned int start_point_lsd = 2775118279;
+	unsigned int end_point_msd = 957399;
+	unsigned int end_point_lsd = 2605776895;
 	
 #ifdef GPU
 	setupCUDA();
 #endif
-	
-	int size = 256;
-	unsigned int *vector1 = (unsigned int*)malloc(sizeof(int) * size);
-	unsigned int *vector2 = (unsigned int*)malloc(sizeof(int) * size);
-	unsigned int *valid = (unsigned int*)malloc(sizeof(int) * size);
+
+	unsigned int *vector1 = (unsigned int*)malloc(sizeof(int) * SIZE);
+	unsigned int *vector2 = (unsigned int*)malloc(sizeof(int) * SIZE);
+	unsigned int *valid = (unsigned int*)malloc(sizeof(int) * SIZE);
 	
 	cc_struct temp;
 	temp.unpacked0 = 0;
@@ -264,7 +283,7 @@ int main(){
 	int j = 0;
 	
 #ifdef CPU
-	unsigned long start_point = 4111111111111111;
+	// unsigned long start_point = 4111111111111111;
 	unsigned int *hash = (unsigned int*)malloc(sizeof(int) * 5);
 		for(j = 0; j< 100001280; j++) {
 			unsigned long result = bitPackCC(start_point);
@@ -280,55 +299,58 @@ int main(){
 #endif
 	
 #ifdef GPU
-	unsigned int *packed = (unsigned int*) malloc(sizeof(unsigned int) * 3);
-
-	for(j = 0; j < 1; j++)
-	{	
-		for(i = 0; i < 256; i++){
-			// unsigned long result = bitPackCC(start_point);
-			
-			if(!packed){
-				printf("omgwtfbbq: how the fuck did malloc fail??\n");
-				exit(3);
-			}
-			
-			bitPackCC_32(start_point_msd, start_point_lsd, packed);
-			unsigned long result = 0;
-			
-			unsigned long long_result = 0;
-			long_result = packed[0];
-			long_result = long_result << 32;
-			long_result = long_result | packed[1];
-			
-			unsigned long unified = start_point_msd;
-			unified = unified << 32;
-			unified = unified | start_point_lsd;
-			
-			// ++start_point;
-			while(!luhnOnPacked(long_result)){
-				incrementNumber(&start_point_msd, &start_point_lsd);
-				bitPackCC_32(start_point_msd, start_point_lsd, packed);
-				long_result = packed[0];
-				long_result = long_result << 32;
-				long_result = long_result | packed[1];
-				
-				unified = start_point_msd;
-				unified = unified << 32;
-				unified = unified | start_point_lsd;
-			}
-			
-			// printf("Valid! %u %u - %u %u - %lu - %lu\n", start_point_msd, start_point_lsd, packed[0], packed[1], long_result, unified);
-			// ++start_point;
-			incrementNumber(&start_point_msd, &start_point_lsd);
-		
-			vector1[i] = packed[0];
-			vector2[i] = packed[1];	
-			
-		}
 	
-		test(vector1,vector2,valid);
+	unsigned long* intervals = divide_hash_space(start_point,end_point);
+	
+	// unsigned int *packed = (unsigned int*) malloc(sizeof(unsigned int) * 3);
+	// if(!packed){
+	// 	printf("omgwtfbbq: how the fuck did malloc fail??\n");
+	// 	exit(3);
+	// }
+
+	for(j = 0; j < 100; j++)
+	{	
+		
+		// for(i = 0; i < SIZE; i++){
+		// 	// unsigned long result = bitPackCC(start_point);
+		// 	
+		// 	bitPackCC_32(start_point_msd, start_point_lsd, packed);
+		// 	unsigned long result = 0;
+		// 	
+		// 	unsigned long long_result = 0;
+		// 	long_result = packed[0];
+		// 	long_result = long_result << 32;
+		// 	long_result = long_result | packed[1];
+		// 	
+		// 	unsigned long unified = start_point_msd;
+		// 	unified = unified << 32;
+		// 	unified = unified | start_point_lsd;
+		// 	
+		// 	// ++start_point;
+		// 	while(!luhnOnPacked(long_result)){
+		// 		incrementNumber(&start_point_msd, &start_point_lsd);
+		// 		bitPackCC_32(start_point_msd, start_point_lsd, packed);
+		// 		long_result = packed[0];
+		// 		long_result = long_result << 32;
+		// 		long_result = long_result | packed[1];
+		// 		
+		// 		unified = start_point_msd;
+		// 		unified = unified << 32;
+		// 		unified = unified | start_point_lsd;
+		// 	}
+		// 	
+		// 	// printf("Valid! %u %u - %u %u - %lu - %lu\n", start_point_msd, start_point_lsd, packed[0], packed[1], long_result, unified);
+		// 	// ++start_point;
+		// 	incrementNumber(&start_point_msd, &start_point_lsd);
+		// 
+		// 	vector1[i] = packed[0];
+		// 	vector2[i] = packed[1];	
+		// 	
+		// }
+	
+		test(intervals, vector1,vector2,valid);
 	}
-	free(packed);
+	// free(packed);
 	
 #endif
 
