@@ -15,17 +15,17 @@ Steve Worley < m a t h g e e k@(my last name).com >
 
 
 
-#define SIZE     1024
+#define SIZE     10000128
+
+unsigned int *d_start_positions_msd;
+unsigned int *d_start_positions_lsd;
+
 unsigned int *d_num1;
 unsigned int *d_num2;
 
 int* h_valid;
 unsigned int* d_valid;
 unsigned int* d_hash;
-
-
-__shared__ unsigned int initVector[5];
-// __device__ unsigned int d_initVector[5];
 
 __host__ __device__ unsigned int swapends(unsigned int v) 
 {
@@ -73,7 +73,7 @@ __device__ int generateHash(unsigned int num1, unsigned int num2, unsigned int *
 	d_initVector[3] = 0x10325476;
 	d_initVector[4] = 0xC3D2E1F0;
 	
-	// unsigned int *w=fullw+17*threadIdx.x; // spaced by 17 to avoid bank conflicts, CC: I don't think this is relevant...
+	// unsigned int *w=fullw+17*threadIdx.x; // spaced by 17 to avoid bank conflicts, CC: TODO verify this
 	char lookup_table[10] = {48,49,50,51,52,53,54,55,56,57};
 	int pos = 0;
 	unsigned int digit = 0;
@@ -233,10 +233,8 @@ __device__ unsigned long GPUbitPackCC(unsigned long num){
 	return result;
 }
 
-__global__ void GPULuhn(unsigned int *num1, unsigned int *num2,unsigned int *valid, size_t valid_pitch, unsigned int *hash){
-	int i = threadIdx.x + blockIdx.x * blockDim.x;
-	// GPUbitPackCC(4111111111111111UL);
-	// int i = 0;
+__device__ void GPULuhn(unsigned int *num1, unsigned int *num2,unsigned int *valid, size_t valid_pitch){
+	// int i = threadIdx.x + blockIdx.x * blockDim.x;
 	
 	int pos = 0;
 	unsigned int digit = 0;
@@ -245,36 +243,73 @@ __global__ void GPULuhn(unsigned int *num1, unsigned int *num2,unsigned int *val
 	int lookup_table[10] = {0,2,4,6,8,1,3,5,7,9};
 	
 	//Setup strided memory with correct pitch
-	int* valid_row = (int*)((char*)valid + 0 * valid_pitch); // 0 is the height offset. zero right now because it's essentially linear
+	
+	// int* valid_row = (int*)((char*)valid + 0 * valid_pitch); // 0 is the height offset. zero right now because it's essentially linear
+	// unsigned int* num1_row = (unsigned int*)((char*)num1 + 0 * valid_pitch);
+	// unsigned int* num2_row = (unsigned int*)((char*)num2 + 0 * valid_pitch);
+	
+	for(pos = 7; pos >= 0; --pos) {
+		digit = 0;
+		digit = *num1 & (0xF << (pos * 4));
+		digit = digit >> (pos * 4);
+		
+		if(even) {
+			digit = lookup_table[digit];
+		}
+		sum = sum + digit;
+		even = !even;
+	}
+	for(pos = 7; pos >= 0; --pos) {
+		digit = 0;
+		digit = *num2 & (0xF << (pos * 4));
+		digit = digit >> (pos * 4);
+		
+		if(even) {
+			digit = lookup_table[digit];
+		}
+		sum = sum + digit;
+		even = !even;
+	}
+	
+	*valid = (sum % 10 == 0);
+}
+
+/*
+	Increment CC in GPU as unsigned 32 bit inputs
+*/
+__device__ void GPUincrementNumber(unsigned int *msd, unsigned int *lsd){
+	unsigned int lsd_temp = *lsd + 1;
+	if(*lsd + 1 < *lsd){ //overflow!
+		*msd = *msd + 1;
+	}
+	*lsd = lsd_temp;
+}
+
+__global__ void GPUProbe(unsigned int *start_positions_msd,unsigned int *start_positions_lsd,unsigned int *num1, unsigned int *num2,unsigned int *valid, size_t valid_pitch, unsigned int *hash){
+	int i = threadIdx.x + blockIdx.x * blockDim.x;
+	
+	// unsigned int j = start_positions_msd[threadIdx.x];
+	// unsigned int k = start_positions_lsd[threadIdx.x];
+	// extern __shared__ unsigned int j;
+	// if(blockIdx.x == 0){
+	// 	j[threadIdx.x] = start_positions_lsd[threadIdx.x];
+	// }
+	// 
+	// if(blockIdx.x == 52083){
+	// 	__syncthreads();
+	// 	start_positions_lsd[threadIdx.x] = j[threadIdx.x];
+	// }
+	
+	// atomicAdd(&start_positions_lsd[threadIdx.x],1);
+	// GPUincrementNumber(&start_positions_msd[threadIdx.x],&j[threadIdx.x]);
+	
+	unsigned int* valid_row = (unsigned int*)((char*)valid + 0 * valid_pitch); // 0 is the height offset. zero right now because it's essentially linear
 	unsigned int* num1_row = (unsigned int*)((char*)num1 + 0 * valid_pitch);
 	unsigned int* num2_row = (unsigned int*)((char*)num2 + 0 * valid_pitch);
 	
+	
+	GPULuhn(&num1_row[i],&num2_row[i],&valid_row[i],valid_pitch); //TODO Remove dereference operator
 	generateHash(num1_row[i],num2_row[i],hash);
-	
-	for(pos = 7; pos >= 0; --pos) {
-		digit = 0;
-		digit = num1_row[i] & (0xF << (pos * 4));
-		digit = digit >> (pos * 4);
-		
-		if(even) {
-			digit = lookup_table[digit];
-		}
-		sum = sum + digit;
-		even = !even;
-	}
-	for(pos = 7; pos >= 0; --pos) {
-		digit = 0;
-		digit = num2_row[i] & (0xF << (pos * 4));
-		digit = digit >> (pos * 4);
-		
-		if(even) {
-			digit = lookup_table[digit];
-		}
-		sum = sum + digit;
-		even = !even;
-	}
-	
-	valid_row[i] = (sum % 10 == 0);
 }
 
 int setupCUDA(){
@@ -283,11 +318,13 @@ int setupCUDA(){
 	error = cudaGetDeviceCount(&deviceCount);
 	if (error != cudaSuccess) {
 		printf("The system is reporting no devices available... %d\n",error);
+		exit(-1);
 	}
 	
 	error = cudaSetDevice(0);
 	if(error != cudaSuccess){
 		printf("Unable to set runtime device... %d\n",error);
+		exit(-1);
 	}
 	
 	return 0;
@@ -296,71 +333,136 @@ int setupCUDA(){
 // extern "C"{
 	int test(unsigned int *num1, unsigned int *num2,unsigned int *h_valid)
 	{	
+		int error = 0;
+		
+		size_t d_start_positions_msd_pitch;
+		error = cudaMallocPitch((void **)(&d_start_positions_msd), &d_start_positions_msd_pitch, 192 * sizeof(int), 1); //This SIZE is the thread count
+		if(error != cudaSuccess){
+			printf("One of the mallocPitchs failed %d \n", error);
+			return -1;
+		}
+		size_t d_start_positions_lsd_pitch;
+		error = cudaMallocPitch((void **)(&d_start_positions_lsd), &d_start_positions_lsd_pitch, 192 * sizeof(int), 1); //This SIZE is the thread count
+		if(error != cudaSuccess){
+			printf("One of the mallocPitchs failed %d \n", error);
+			return -1;
+		}
+		
 		size_t d_num1_pitch;
-		cudaMallocPitch((void **)(&d_num1), &d_num1_pitch, SIZE * sizeof(int), 1);
+		error = cudaMallocPitch((void **)(&d_num1), &d_num1_pitch, SIZE * sizeof(int), 1);
+		if(error != cudaSuccess){
+			printf("One of the mallocPitchs failed %d \n", error);
+			return -1;
+		}
 		size_t d_num2_pitch;
-		cudaMallocPitch((void **)(&d_num2), &d_num2_pitch, SIZE * sizeof(int), 1);
+		error = cudaMallocPitch((void **)(&d_num2), &d_num2_pitch, SIZE * sizeof(int), 1);
+		if(error != cudaSuccess){
+			printf("One of the mallocPitchs failed %d \n", error);
+			return -1;
+		}
 		size_t d_valid_pitch;
-		cudaMallocPitch((void **)(&d_valid), &d_valid_pitch, SIZE * sizeof(int), 1);
+		error = cudaMallocPitch((void **)(&d_valid), &d_valid_pitch, SIZE * sizeof(int), 1);
+		if(error != cudaSuccess){
+			printf("One of the mallocPitchs failed %d \n", error);
+			return -1;
+		}
 		size_t d_hash_pitch;
-		cudaMallocPitch((void **)(&d_hash), &d_hash_pitch, SIZE * sizeof(int) * 5, 1);
+		error = cudaMallocPitch((void **)(&d_hash), &d_hash_pitch, SIZE * sizeof(int) * 5, 1);
+		
+		if(error != cudaSuccess){
+			printf("One of the mallocPitchs failed %d \n", error);
+			return -1;
+		}
 		
 		int *h_hash = (int*)malloc(SIZE * sizeof(int) * 5);
+		unsigned int *h_start_positions_lsd = (unsigned int*)malloc(192 * sizeof(unsigned int));
 		
 	
-		cudaMemset2D(d_num1, d_num1_pitch, 0, SIZE * sizeof(int), 1);
-		cudaMemset2D(d_num2, d_num2_pitch, 0, SIZE * sizeof(int), 1);
-		cudaMemset2D(d_valid, d_valid_pitch, 0, SIZE * sizeof(int), 1);
-		cudaMemset2D(d_hash, d_hash_pitch, 0, SIZE * sizeof(int) * 5, 1);
+		error = cudaMemset2D(d_num1, d_num1_pitch, 0, SIZE * sizeof(int), 1);
+		error = cudaMemset2D(d_num2, d_num2_pitch, 0, SIZE * sizeof(int), 1);
+		error = cudaMemset2D(d_valid, d_valid_pitch, 0, SIZE * sizeof(int), 1);
+		error = cudaMemset2D(d_hash, d_hash_pitch, 0, SIZE * sizeof(int) * 5, 1);
 		
-		cudaMemcpy2D(d_num1,d_num1_pitch, num1, sizeof(int) * SIZE, SIZE * sizeof(int), 1, cudaMemcpyHostToDevice);
-		cudaMemcpy2D(d_num2,d_num2_pitch, num2, sizeof(int) * SIZE, SIZE * sizeof(int), 1, cudaMemcpyHostToDevice);
+		error = cudaMemset2D(d_start_positions_msd, d_start_positions_msd_pitch, 0, 192 * sizeof(int), 1); //192 is the thread count
+		error = cudaMemset2D(d_start_positions_lsd, d_start_positions_lsd_pitch, 0, 192 * sizeof(int), 1); //192 is the thread count
+
+		// error = cudaMemcpy2D(d_num1,d_num1_pitch, num1, sizeof(int) * SIZE, SIZE * sizeof(int), 1, cudaMemcpyHostToDevice);
+		// error = cudaMemcpy2D(d_num2,d_num2_pitch, num2, sizeof(int) * SIZE, SIZE * sizeof(int), 1, cudaMemcpyHostToDevice);
+		
+		error = cudaMemcpy2D(d_num1,d_num1_pitch, num1, sizeof(int) * 256, 256 * sizeof(int), 1, cudaMemcpyHostToDevice);
+		error = cudaMemcpy2D(d_num2,d_num2_pitch, num2, sizeof(int) * 256, 256 * sizeof(int), 1, cudaMemcpyHostToDevice);
+		
+		if(error != cudaSuccess){
+			printf("One of the mem copies or memsets failed %d\n", error);
+			return -1;
+		}
 	
-		GPULuhn<<< 5 , 128 >>>(d_num1,d_num2,d_valid, d_valid_pitch, d_hash);
+		GPUProbe<<< 52084 , 192 >>>(d_start_positions_msd,d_start_positions_lsd, d_num1,d_num2,d_valid, d_valid_pitch, d_hash);
+		// GPUProbe<<< 52084 , 192 >>>((unsigned int*)NULL,(unsigned int*)NULL, d_num1,d_num2,d_valid, d_valid_pitch, d_hash);
 		cudaThreadSynchronize();
 		
-		int error = 0;
-		// error = cudaMemcpy2D(num1, sizeof(int) * SIZE, d_num1, d_num1_pitch, SIZE * sizeof(int), 1, cudaMemcpyDeviceToHost);
+		
+		error = cudaMemcpy2D(num1, sizeof(int) * 256, d_num1, d_num1_pitch, 256 * sizeof(int), 1, cudaMemcpyDeviceToHost);
 		if(error != cudaSuccess){
 			printf("Failed to copy d_num1 from device %d\n", error);
 		}
-		
-		// error = cudaMemcpy2D(num2,sizeof(int) * SIZE, d_num2, d_num2_pitch, SIZE * sizeof(int), 1, cudaMemcpyDeviceToHost);
+		error = cudaMemcpy2D(num2,sizeof(int) * 256, d_num2, d_num2_pitch, 256 * sizeof(int), 1, cudaMemcpyDeviceToHost);
 		if(error != cudaSuccess){
 			printf("Failed to copy d_num2 from device %d\n", error);
 		}
 		
-		error = cudaMemcpy2D(h_valid,sizeof(int) * SIZE, d_valid, d_valid_pitch, SIZE * sizeof(int), 1, cudaMemcpyDeviceToHost);
+		error = cudaMemcpy2D(h_start_positions_lsd, sizeof(int) * 192, d_start_positions_lsd, d_start_positions_lsd_pitch, 192 * sizeof(int), 1, cudaMemcpyDeviceToHost);
+		if(error != cudaSuccess){
+			printf("Failed to copy d_start_positions_lsd from device %d\n", error);
+		}
+		
+		// error = cudaMemcpy2D(h_valid,sizeof(int) * SIZE, d_valid, d_valid_pitch, SIZE * sizeof(int), 1, cudaMemcpyDeviceToHost);
+		error = cudaMemcpy2D(h_valid,sizeof(int) * 256, d_valid, d_valid_pitch, 256 * sizeof(int), 1, cudaMemcpyDeviceToHost);
 		if(error != cudaSuccess){
 			printf("Failed to copy d_valid from device %d\n",error);
 		}
 		
-		error = cudaMemcpy2D(h_hash,sizeof(int) * SIZE * 5, d_hash, d_hash_pitch, SIZE * sizeof(int) * 5, 1, cudaMemcpyDeviceToHost);
+		// error = cudaMemcpy2D(h_hash,sizeof(int) * SIZE * 5, d_hash, d_hash_pitch, SIZE * sizeof(int) * 5, 1, cudaMemcpyDeviceToHost);
+		error = cudaMemcpy2D(h_hash,sizeof(int) * 256 * 5, d_hash, d_hash_pitch, 256 * sizeof(int) * 5, 1, cudaMemcpyDeviceToHost);
 		if(error != cudaSuccess){
 			printf("Failed to copy d_hash from device %d\n",error);
+			return -1;
 		}
 		
 		if(error){
 			printf("OMGWTFBBQ error %d\n",error);
+			return -1;
 		}
 
 		int i =0;
 		for(i = 0; i < 256; i++){
-			if(h_valid[i]){
+		// 	// if(h_valid[i]){
 				printf("%d --- Chunk1 %08x %08x  Valid %u\n",i, num2[i],num1[i], h_valid[i]);
 				printf("\tHash: %08x %08x %08x %08x %08x\n", h_hash[0 + i*5],h_hash[1 + i*5],h_hash[2 + i*5],h_hash[3 + i*5],h_hash[4 + i*5]);
-			}
+		// 	// }
+		}
+		// 
+		for(i = 0; i < 192; i++){
+			printf("%u ", h_start_positions_lsd[i]);
 		}
 		
-		cudaFree(d_num1);
-		cudaFree(d_num2);
-		cudaFree(d_valid);
-		cudaFree(d_hash);
+		error = cudaFree(d_num1);
+		error = cudaFree(d_num2);
+		error = cudaFree(d_valid);
+		error = cudaFree(d_hash);
+		error = cudaFree(d_start_positions_msd);
+		error = cudaFree(d_start_positions_lsd);
+		
+		free(h_hash);
+		free(h_start_positions_lsd);
 		
 		error = 0;
 		if(error){
 			printf("OMGWTFBBQ error %d\n",error);
+			return -1;
 		}
+		
+		printf("Success...\n");
 		
 		return 0;
 	}
