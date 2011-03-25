@@ -1,4 +1,5 @@
 
+const int SIZE = 10000128;
 const int blocksize = 52084;
 const int threadsize = 192;
 // const int data_size = 10000128;

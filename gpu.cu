@@ -66,7 +66,7 @@ __device__ unsigned int popFinalWs(unsigned int *w, int &wIndex)
 }
 
 __device__ int generateHash(unsigned int num1, unsigned int num2, unsigned int *hash){
-	extern __shared__ unsigned int fullw[];
+	// extern __shared__ unsigned int fullw[];
 	
 	int hash_offset = threadIdx.x + blockIdx.x * blockDim.x;
 	
@@ -334,7 +334,7 @@ int setupCUDA(){
 		// }
 		
 		size_t d_intervals_pitch;
-		error = cudaMallocPitch((void **)(&d_intervals), &d_intervals_pitch, blocksize * sizeof(int), 1); //This SIZE is the thread count
+		error = cudaMallocPitch((void **)(&d_intervals), &d_intervals_pitch, blocksize * sizeof(long), 1); //This SIZE is the thread count
 		if(error != cudaSuccess){
 			printf("One of the mallocPitchs failed %d \n", error);
 			return -1;
@@ -367,7 +367,7 @@ int setupCUDA(){
 		}
 		
 		int *h_hash = (int*)malloc(SIZE * sizeof(int) * 5);
-		unsigned int *h_start_positions_lsd = (unsigned int*)malloc(192 * sizeof(unsigned int));
+		// unsigned int *h_start_positions_lsd = (unsigned int*)malloc(SIZE * sizeof(unsigned int));
 		
 	
 		// error = cudaMemset2D(d_num1, d_num1_pitch, 0, SIZE * sizeof(int), 1);
@@ -405,17 +405,20 @@ int setupCUDA(){
 		// if(error != cudaSuccess){
 		// 	printf("Failed to copy d_start_positions_lsd from device %d\n", error);
 		// }
+
+
+
 		
-		error = cudaMemcpy2D(h_valid,sizeof(int) * 512, d_valid, d_valid_pitch, 512 * sizeof(int), 1, cudaMemcpyDeviceToHost);
-		if(error != cudaSuccess){
-			printf("Failed to copy d_valid from device %d\n",error);
-		}
-		
-		error = cudaMemcpy2D(h_hash,sizeof(int) * 512 * 5, d_hash, d_hash_pitch, 512 * sizeof(int) * 5, 1, cudaMemcpyDeviceToHost);
-		if(error != cudaSuccess){
-			printf("Failed to copy d_hash from device %d\n",error);
-			return -1;
-		}
+		// error = cudaMemcpy2D(h_valid,sizeof(int) * SIZE, d_valid, d_valid_pitch, SIZE * sizeof(int), 1, cudaMemcpyDeviceToHost);
+		// if(error != cudaSuccess){
+		// 	printf("Failed to copy d_valid from device %d\n",error);
+		// }
+		// 
+		// error = cudaMemcpy2D(h_hash,sizeof(int) * SIZE * 5, d_hash, d_hash_pitch, SIZE * sizeof(int) * 5, 1, cudaMemcpyDeviceToHost);
+		// if(error != cudaSuccess){
+		// 	printf("Failed to copy d_hash from device %d\n",error);
+		// 	return -1;
+		// }
 		
 		if(error){
 			printf("OMGWTFBBQ error %d\n",error);
@@ -423,7 +426,7 @@ int setupCUDA(){
 		}
 		// 
 		// int i =0;
-		// for(i = 0; i < 512; i++){
+		// for(i = 0; i < 5; i++){
 		// 	// if(h_valid[i]){
 		// 		printf("%d --- Chunk1 %08x %08x  Valid %u\n",i, num2[i],num1[i], h_valid[i]);
 		// 		printf("\tHash: %08x %08x %08x %08x %08x\n", h_hash[0 + i*5],h_hash[1 + i*5],h_hash[2 + i*5],h_hash[3 + i*5],h_hash[4 + i*5]);
@@ -443,7 +446,7 @@ int setupCUDA(){
 		error = cudaFree(d_intervals);
 		
 		free(h_hash);
-		free(h_start_positions_lsd);
+		// free(h_start_positions_lsd);
 		
 		error = 0;
 		if(error){

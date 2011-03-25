@@ -1,1 +1,5 @@
 Example C program that shows how to use multicores to brute-force your way through a hash space if you know credit card numbers are used.
+
+For me on OSX:
+
+nvcc -g -c gpu.cu -m64 -arch sm_12 && g++ -g luhn.c gpu.o -L/usr/local/cuda/lib -lcuda -lcudart -DGPU

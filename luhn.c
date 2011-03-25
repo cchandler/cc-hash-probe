@@ -5,8 +5,6 @@
 
 #include "gpu.h"
 
-#define SIZE     10000128
-
 int regularGenerateHash(unsigned int num1, unsigned int num2, unsigned int *hash){
 	unsigned int fullw[50];
 	
@@ -244,14 +242,19 @@ void incrementNumber(unsigned int *msd, unsigned int *lsd){
 	*lsd = lsd_temp;
 }
 
-unsigned long* divide_hash_space(unsigned long start, unsigned long end) {
+unsigned long* divide_hash_space(unsigned long start, unsigned long end, unsigned long offset) {
 	unsigned long total = end - start;
 	unsigned long chunk = floor(total / blocksize);
+	
+	if(chunk < offset){ // If this is the case we've scanned the entire range
+		printf("All possibilities between %lu and %lu have been processed\n", start, end);
+		exit(0);
+	}
 	
 	unsigned long *intervals = (unsigned long*)malloc(sizeof(long) * blocksize);
 	int i = 0;
 	for(; i < blocksize; ++i){
-		intervals[i] = start + chunk * i;
+		intervals[i] = start + (chunk * i + offset);
 	}
 	return intervals;
 }
@@ -260,20 +263,17 @@ int main(){
 	//Setup the start points and ends points.
 	//The longs are for easier host side computing and the msd/lsd WORDs are for
 	//easier computing on the CUDA device.
-	unsigned long start_point = 4111111111111111;
-	unsigned long end_point =      4111999999999999;
-	unsigned int start_point_msd = 957192;
-	unsigned int start_point_lsd = 2775118279;
-	unsigned int end_point_msd = 957399;
-	unsigned int end_point_lsd = 2605776895;
+	unsigned long start_point = 4461577000000000;
+	unsigned long end_point =   4461577999999999;
+	// unsigned long end_point =      4111999999999999;
+	// unsigned int start_point_msd = 957192;
+	// unsigned int start_point_lsd = 2775118279;
+	// unsigned int end_point_msd = 957399;
+	// unsigned int end_point_lsd = 2605776895;
 	
 #ifdef GPU
 	setupCUDA();
 #endif
-
-	unsigned int *vector1 = (unsigned int*)malloc(sizeof(int) * SIZE);
-	unsigned int *vector2 = (unsigned int*)malloc(sizeof(int) * SIZE);
-	unsigned int *valid = (unsigned int*)malloc(sizeof(int) * SIZE);
 	
 	cc_struct temp;
 	temp.unpacked0 = 0;
@@ -285,7 +285,7 @@ int main(){
 #ifdef CPU
 	// unsigned long start_point = 4111111111111111;
 	unsigned int *hash = (unsigned int*)malloc(sizeof(int) * 5);
-		for(j = 0; j< 100001280; j++) {
+		for(j = 0; j< 10001280; j++) {
 			unsigned long result = bitPackCC(start_point);
 			luhnOnPacked(result);
 			unsigned int num1;
@@ -299,8 +299,12 @@ int main(){
 #endif
 	
 #ifdef GPU
+
+	unsigned int *vector1 = (unsigned int*)malloc(sizeof(int) * SIZE);
+	unsigned int *vector2 = (unsigned int*)malloc(sizeof(int) * SIZE);
+	unsigned int *valid = (unsigned int*)malloc(sizeof(int) * SIZE);
 	
-	unsigned long* intervals = divide_hash_space(start_point,end_point);
+	unsigned long* intervals = divide_hash_space(start_point,end_point, 0);
 	
 	// unsigned int *packed = (unsigned int*) malloc(sizeof(unsigned int) * 3);
 	// if(!packed){
@@ -308,9 +312,11 @@ int main(){
 	// 	exit(3);
 	// }
 
-	for(j = 0; j < 100; j++)
+	for(j = 1; j <= 1; j++)
 	{	
-		
+		if(j % 10 == 0){
+			printf("Processed %d\n",j);
+		}
 		// for(i = 0; i < SIZE; i++){
 		// 	// unsigned long result = bitPackCC(start_point);
 		// 	
@@ -349,6 +355,8 @@ int main(){
 		// }
 	
 		test(intervals, vector1,vector2,valid);
+		free(intervals);
+		intervals = divide_hash_space(start_point,end_point, j * threadsize);
 	}
 	// free(packed);
 	
