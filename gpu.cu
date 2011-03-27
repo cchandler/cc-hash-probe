@@ -15,19 +15,6 @@ Thanks:
 Steve Worley < m a t h g e e k@(my last name).com >
 */
 
-
-// unsigned long long int *d_intervals;
-	
-unsigned int *d_start_positions_msd;
-unsigned int *d_start_positions_lsd;
-
-unsigned int *d_num1;
-unsigned int *d_num2;
-
-int* h_valid;
-// unsigned int* d_valid;
-// unsigned int* d_hash;
-
 /* 
    From Steve's notes:
    We don't want to precompute and store all 80 w array
@@ -297,7 +284,7 @@ int setupCUDA(cc_gpu_state_t *state){
 	int error = 0;
 	error = cudaSetDevice(state->gpuId);
 	if(error != cudaSuccess){
-		printf("Unable to set runtime device... %d\n",error);
+		printf("Unable to set runtime device %d... %d\n",state->gpuId, error);
 		exit(-1);
 	}
 	

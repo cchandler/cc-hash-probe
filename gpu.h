@@ -1,7 +1,7 @@
 
-const int blocksize = 52084;
-const int threadsize = 192;
-const int SIZE = blocksize * threadsize;
+const unsigned int blocksize = 52084;
+const unsigned int threadsize = 192;
+const unsigned long SIZE = blocksize * threadsize;
 
 #define HASH_CHUNKS  5
 

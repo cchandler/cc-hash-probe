@@ -259,7 +259,7 @@ void* process_work(void *threadarg){
 	while( divide_hash_space_for_gpu(start_point,end_point, j * threadsize, intervals) )
 	{	
 		if(j % 10 == 0){
-			printf("Processed %d\n",j * SIZE);
+			printf("Processed %lu\n",j * SIZE);
 		}
 	
 		cuda_scan(&(mydata->gpu_state),intervals,valid, hashes);
@@ -267,10 +267,10 @@ void* process_work(void *threadarg){
 	}
 	free(intervals);
 	free(hashes);
-	
+	teardownCUDA(&(mydata->gpu_state));
 #endif
 
-	teardownCUDA(&(mydata->gpu_state));
+	
 	printf("All possibilities between %lu and %lu have been processed\n", start_point, end_point);
 
 	pthread_exit(NULL);
@@ -286,12 +286,12 @@ int getThreadCount(){
 
 #ifdef GPU
 int getThreadCount(){
-	return 1;
+	return getCudaDeviceCount();
 }
 #endif
 
 int main(){
-	unsigned long start_point = 4461577900000000;
+	unsigned long start_point = 4461577000000000;
 	// unsigned long start_point = 4461577999900000;
 	unsigned long end_point =   4461577999999999;
 	
@@ -314,6 +314,10 @@ int main(){
 #endif
 		int rc = pthread_create(&threads[t], NULL, process_work, (void *) &thread_data[t] );
 	}
-	pthread_exit(NULL);
+	
+	for(t = 0; t < thread_count; ++t){
+		pthread_join(threads[t],NULL);
+	}
+	
 	return 0;
 }

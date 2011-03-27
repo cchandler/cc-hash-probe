@@ -83,7 +83,7 @@ int main() {
 	pthread_t threads[NUM_THREADS];
 	cc_interval_t thread_data[NUM_THREADS];
 	divide_hash_space(start_point,end_point,thread_data);
-	
+
 	long t;
 	for(t = 0; t < NUM_THREADS; ++t) {
 		int rc = pthread_create(&threads[t], NULL, cc_probe, (void *) &thread_data[t] );

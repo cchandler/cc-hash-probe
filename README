@@ -7,3 +7,6 @@ nvcc -g -c gpu.cu -m64 -arch sm_12 && g++ -g luhn.c gpu.o -L/usr/local/cuda/lib 
 For me on Suse Enterprise...
 
 nvcc -g -c gpu.cu -m64 -arch sm_12 && g++ -g luhn.c gpu.o -L/usr/local/cuda/lib64 -lcuda -lcudart -DGPU
+
+
+gcc cc.c -lpthread -lm
