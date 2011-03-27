@@ -1,19 +1,43 @@
 
-const int SIZE = 10000128;
 const int blocksize = 52084;
 const int threadsize = 192;
-// const int data_size = 10000128;
+const int SIZE = blocksize * threadsize;
 
-int setupCUDA();
-int test(unsigned long *intervals, unsigned int *num1, unsigned int *num2,unsigned int *valid);
-unsigned int swapends(unsigned int v);
+#define HASH_CHUNKS  5
 
-typedef struct{
-	int num1; //Most significant digits
-	int num2;
-	int num3;
-	int num4;
+#ifdef CPU
+#define MODE "CPU"
+#endif
+
+#ifdef GPU
+#define MODE "GPU"
+#endif
+
+typedef struct {
+	unsigned int gpuId;
 	
-	unsigned int unpacked0;
-	unsigned int unpacked1;
-} cc_struct;
+	size_t d_intervals_pitch;
+	unsigned long long int *d_intervals;
+	
+	size_t d_valid_pitch;
+	unsigned int* d_valid;
+	
+	size_t d_hash_pitch;
+	unsigned int* d_hash;
+} cc_gpu_state_t;
+
+typedef struct {
+	unsigned int threadId;
+	unsigned long start_point;
+	unsigned long end_point;
+	
+	// unsigned int gpuId;
+	cc_gpu_state_t gpu_state;
+} cc_interval_t;
+
+int setupCUDA(cc_gpu_state_t *state);
+int teardownCUDA(cc_gpu_state_t *state);
+int cuda_scan(cc_gpu_state_t *state, unsigned long *intervals, unsigned int *valid, int *hashes);
+unsigned int swapends(unsigned int v);
+int getCudaDeviceCount();
+

@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <math.h>
+#include <pthread.h>
 
 #include "gpu.h"
 
 int regularGenerateHash(unsigned int num1, unsigned int num2, unsigned int *hash){
-	unsigned int fullw[50];
 	
 	unsigned int d_initVector[5];
 	d_initVector[0] = 0x67452301;
@@ -15,7 +15,6 @@ int regularGenerateHash(unsigned int num1, unsigned int num2, unsigned int *hash
 	d_initVector[3] = 0x10325476;
 	d_initVector[4] = 0xC3D2E1F0;
 	
-	// unsigned int *w=fullw+17*threadIdx.x; // spaced by 17 to avoid bank conflicts, CC: I don't think this is relevant...
 	char lookup_table[10] = {48,49,50,51,52,53,54,55,56,57};
 	int pos = 0;
 	unsigned int digit = 0;
@@ -67,8 +66,7 @@ int regularGenerateHash(unsigned int num1, unsigned int num2, unsigned int *hash
 	
 	unsigned int w[80] = {'\0'};
 	for (int i=0; i<80; i++) { w[i] = '\0'; };
-	// w[0] = 1633837952; // 'abc' + 1 bit
-	// num_1a = num_1a << 8;
+
 	w[0] = num_1a;
 	w[1] = num_2a;
 	w[2] = num_3a;
@@ -87,10 +85,8 @@ int regularGenerateHash(unsigned int num1, unsigned int num2, unsigned int *hash
 	
 	#pragma unroll 999
 	for (int i=0; i<20; ++i) {
-	  // unsigned int thisW=popNextW(w, wIndex);
 	  unsigned int thisW=w[i];
-	     // unsigned int f= (b&c)|((~b)&d);
-	  unsigned int f= d ^ (b & (c^d)); // alternate computation of above
+	  unsigned int f= d ^ (b & (c^d));
 	  unsigned int temp=((a<<5)|(a>>27))+f+e+0x5A827999+thisW;
 	  e=d;
 	  d=c;
@@ -101,7 +97,6 @@ int regularGenerateHash(unsigned int num1, unsigned int num2, unsigned int *hash
 	
 	#pragma unroll 999
 	for (int i=20; i<40; ++i) {
-	  // unsigned int thisW=popNextW(w, wIndex);
 	  unsigned int thisW=w[i];
 	  unsigned int f= b^c^d;
 	  unsigned int temp=((a<<5)|(a>>27))+f+e+0x6ED9EBA1+thisW;
@@ -114,10 +109,8 @@ int regularGenerateHash(unsigned int num1, unsigned int num2, unsigned int *hash
 
 	#pragma unroll 999
 	for (int i=40; i<60; ++i) {
-	  // unsigned int thisW=popNextW(w, wIndex);
 	  unsigned int thisW=w[i];
-	  //    unsigned int f= (b&c) | (b&d) | (c&d);
-	  unsigned int f= (b&c) | (d & (b|c)); // alternate computation of above
+	  unsigned int f= (b&c) | (d & (b|c));
 	  unsigned int temp=((a<<5)|(a>>27))+f+e+0x8F1BBCDC+thisW;
 	  e=d;
 	  d=c;
@@ -128,7 +121,6 @@ int regularGenerateHash(unsigned int num1, unsigned int num2, unsigned int *hash
 
 	#pragma unroll 999
 	for (int i=60; i<64; ++i) {
-	  // unsigned int thisW=popNextW(w, wIndex);
 	unsigned int thisW=w[i];
 	  unsigned int f= b^c^d;
 	  unsigned int temp=((a<<5)|(a>>27))+f+e+0xCA62C1D6+thisW;
@@ -198,172 +190,130 @@ unsigned long bitPackCC(unsigned long num){
 	return result;
 }
 
-// void bitPackCC_32(unsigned int num_msd, unsigned int num_lsd, unsigned int* output){
-// 	int i = 0;
-// 	unsigned int digit = 0;
-// 	unsigned long result = 0;
-// 	
-// 	unsigned long unified = num_msd;
-// 	unified = unified << 32;
-// 	unified = unified | num_lsd;
-// 	
-// 	for(i = 15; i >= 0; --i){
-// 		digit = unified % 10;
-// 		unified = unified / 10;
-// 		result = result << 4;
-// 		result = result | digit;
-// 	}
-// 	
-// 	output[1] = 0xFFFFFFFF & result;
-// 	result = result >> 32;
-// 	output[0] = 0xFFFFFFFF & result;
-// }
-
-// unsigned long unBitPackCC(unsigned long num){
-// 	int i = 0;
-// 	int digit = 0;
-// 	unsigned long result = 0;
-// 	for(i = 15; i >= 0; --i){
-// 		digit = num & 15;
-// 		printf("%d\n",digit);
-// 		result << 4;
-// 		result = result | digit;
-// 		num = num >> 4;
-// 	}
-// 	return result;
-// }
-
-void incrementNumber(unsigned int *msd, unsigned int *lsd){
-	unsigned int lsd_temp;
-	lsd_temp = *lsd + 1;
-	if(*lsd + 1 < lsd_temp){ //overflow!
-		*msd = *msd + 1;
-	}
-	*lsd = lsd_temp;
-}
-
-unsigned long* divide_hash_space(unsigned long start, unsigned long end, unsigned long offset) {
+int divide_hash_space_for_gpu(unsigned long start, unsigned long end, unsigned long offset, unsigned long *intervals) {
 	unsigned long total = end - start;
 	unsigned long chunk = floor(total / blocksize);
 	
 	if(chunk < offset){ // If this is the case we've scanned the entire range
-		printf("All possibilities between %lu and %lu have been processed\n", start, end);
-		exit(0);
+		return 0;
 	}
 	
-	unsigned long *intervals = (unsigned long*)malloc(sizeof(long) * blocksize);
 	int i = 0;
 	for(; i < blocksize; ++i){
 		intervals[i] = start + (chunk * i + offset);
 	}
-	return intervals;
+	return 1;
 }
 
-int main(){
-	//Setup the start points and ends points.
-	//The longs are for easier host side computing and the msd/lsd WORDs are for
-	//easier computing on the CUDA device.
-	unsigned long start_point = 4461577000000000;
-	unsigned long end_point =   4461577999999999;
-	// unsigned long end_point =      4111999999999999;
-	// unsigned int start_point_msd = 957192;
-	// unsigned int start_point_lsd = 2775118279;
-	// unsigned int end_point_msd = 957399;
-	// unsigned int end_point_lsd = 2605776895;
+void divide_hash_space_for_threads(unsigned long start, unsigned long end, cc_interval_t *data, int thread_count) {
+	unsigned long total = end - start;
+	unsigned long chunk = ceil(total / thread_count);
+	
+	int i = 0;
+	for(; i < thread_count; ++i){
+		(data + i)->start_point = start + (chunk * i);
+		(data + i)->end_point = start + ((chunk * (i + 1)) + 1);
+	}
+}
+
+void* process_work(void *threadarg){
+	cc_interval_t *mydata;
+	mydata = (cc_interval_t *) threadarg;
+	
+	printf("Activating thread ID %d!\n", mydata->threadId);
+	printf("Handling interval: %lu - %lu\n", mydata->start_point, mydata->end_point);
+	unsigned long start_point = mydata->start_point;
+	unsigned long end_point =   mydata->end_point;
 	
 #ifdef GPU
-	setupCUDA();
+	setupCUDA(&(mydata->gpu_state));
 #endif
-	
-	cc_struct temp;
-	temp.unpacked0 = 0;
-	temp.unpacked1 = 0;
 	
 	int i = 0;
 	int j = 0;
 	
 #ifdef CPU
-	// unsigned long start_point = 4111111111111111;
-	unsigned int *hash = (unsigned int*)malloc(sizeof(int) * 5);
-		for(j = 0; j< 10001280; j++) {
-			unsigned long result = bitPackCC(start_point);
-			luhnOnPacked(result);
-			unsigned int num1;
-			unsigned int num2;
-			num2 = 0xFFFFFFFF & result;
-			result = result >> 32;
-			num1 = 0xFFFFFFFF & result;
-			
-			regularGenerateHash(num1,num2,hash);
-		}
+	unsigned int *hash = (unsigned int*)malloc(sizeof(int) * HASH_CHUNKS);
+	while(start_point <= end_point){
+		unsigned long result = bitPackCC(start_point);
+		luhnOnPacked(result);
+		unsigned int num1;
+		unsigned int num2;
+		num2 = 0xFFFFFFFF & result;
+		result = result >> 32;
+		num1 = 0xFFFFFFFF & result;
+		
+		regularGenerateHash(num1,num2,hash);
+		start_point++;
+	}
 #endif
 	
 #ifdef GPU
 
-	unsigned int *vector1 = (unsigned int*)malloc(sizeof(int) * SIZE);
-	unsigned int *vector2 = (unsigned int*)malloc(sizeof(int) * SIZE);
-	unsigned int *valid = (unsigned int*)malloc(sizeof(int) * SIZE);
+	unsigned int *valid = (unsigned int*)malloc(sizeof(int) * SIZE);	
+	unsigned long *intervals = (unsigned long*)malloc(sizeof(long) * blocksize);
+	int *hashes = (int*)malloc(SIZE * sizeof(int) * HASH_CHUNKS);
 	
-	unsigned long* intervals = divide_hash_space(start_point,end_point, 0);
-	
-	// unsigned int *packed = (unsigned int*) malloc(sizeof(unsigned int) * 3);
-	// if(!packed){
-	// 	printf("omgwtfbbq: how the fuck did malloc fail??\n");
-	// 	exit(3);
-	// }
+	int more_work = 1;
 
-	for(j = 1; j <= 1; j++)
+	while( divide_hash_space_for_gpu(start_point,end_point, j * threadsize, intervals) )
 	{	
 		if(j % 10 == 0){
-			printf("Processed %d\n",j);
+			printf("Processed %d\n",j * SIZE);
 		}
-		// for(i = 0; i < SIZE; i++){
-		// 	// unsigned long result = bitPackCC(start_point);
-		// 	
-		// 	bitPackCC_32(start_point_msd, start_point_lsd, packed);
-		// 	unsigned long result = 0;
-		// 	
-		// 	unsigned long long_result = 0;
-		// 	long_result = packed[0];
-		// 	long_result = long_result << 32;
-		// 	long_result = long_result | packed[1];
-		// 	
-		// 	unsigned long unified = start_point_msd;
-		// 	unified = unified << 32;
-		// 	unified = unified | start_point_lsd;
-		// 	
-		// 	// ++start_point;
-		// 	while(!luhnOnPacked(long_result)){
-		// 		incrementNumber(&start_point_msd, &start_point_lsd);
-		// 		bitPackCC_32(start_point_msd, start_point_lsd, packed);
-		// 		long_result = packed[0];
-		// 		long_result = long_result << 32;
-		// 		long_result = long_result | packed[1];
-		// 		
-		// 		unified = start_point_msd;
-		// 		unified = unified << 32;
-		// 		unified = unified | start_point_lsd;
-		// 	}
-		// 	
-		// 	// printf("Valid! %u %u - %u %u - %lu - %lu\n", start_point_msd, start_point_lsd, packed[0], packed[1], long_result, unified);
-		// 	// ++start_point;
-		// 	incrementNumber(&start_point_msd, &start_point_lsd);
-		// 
-		// 	vector1[i] = packed[0];
-		// 	vector2[i] = packed[1];	
-		// 	
-		// }
 	
-		test(intervals, vector1,vector2,valid);
-		free(intervals);
-		intervals = divide_hash_space(start_point,end_point, j * threadsize);
+		cuda_scan(&(mydata->gpu_state),intervals,valid, hashes);
+		j++;
 	}
-	// free(packed);
+	free(intervals);
+	free(hashes);
 	
 #endif
 
-	// printf("Sleeping...\n");
-	// sleep(3);
+	teardownCUDA(&(mydata->gpu_state));
+	printf("All possibilities between %lu and %lu have been processed\n", start_point, end_point);
 
+	pthread_exit(NULL);
+	return 0;
+}
+
+
+#ifdef CPU
+int getThreadCount(){
+	return 4;
+}
+#endif
+
+#ifdef GPU
+int getThreadCount(){
+	return 1;
+}
+#endif
+
+int main(){
+	unsigned long start_point = 4461577900000000;
+	// unsigned long start_point = 4461577999900000;
+	unsigned long end_point =   4461577999999999;
+	
+	int thread_count = getThreadCount();
+	pthread_t threads[thread_count];
+	cc_interval_t thread_data[thread_count];
+	
+	printf("Initializing system with %d thread(s)\n", thread_count);
+	printf("Executing in mode: %s\n",MODE);
+	printf("Scan start point: %lu\n", start_point);
+	printf("Scan end point: %lu\n",end_point);
+	
+	divide_hash_space_for_threads(start_point,end_point,thread_data, thread_count);
+	
+	int t = 0;
+	for(t = 0; t < thread_count; ++t) {
+		thread_data[t].threadId = t;
+#ifdef GPU
+		thread_data[t].gpu_state.gpuId = t;
+#endif
+		int rc = pthread_create(&threads[t], NULL, process_work, (void *) &thread_data[t] );
+	}
+	pthread_exit(NULL);
 	return 0;
 }

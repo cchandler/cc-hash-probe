@@ -3,3 +3,7 @@ Example C program that shows how to use multicores to brute-force your way throu
 For me on OSX:
 
 nvcc -g -c gpu.cu -m64 -arch sm_12 && g++ -g luhn.c gpu.o -L/usr/local/cuda/lib -lcuda -lcudart -DGPU
+
+For me on Suse Enterprise...
+
+nvcc -g -c gpu.cu -m64 -arch sm_12 && g++ -g luhn.c gpu.o -L/usr/local/cuda/lib64 -lcuda -lcudart -DGPU
