@@ -29,6 +29,8 @@ unsigned long get_cc_start_point();
 unsigned long get_cc_end_point();
 
 int load_config();
+int load_table(char *filename);
+char* get_hash_file();
 void print_config();
  
 #endif

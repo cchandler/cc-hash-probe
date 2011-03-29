@@ -2,12 +2,15 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 
 #include <glib.h>
 
 #include "util.h"
 
 extern Config conf_data;
+extern GHashTable *htable;
+int found = 1;
 
 int divide_hash_space_for_gpu(unsigned long start, unsigned long end, unsigned long offset, unsigned long *intervals) {
 	unsigned long total = end - start;
@@ -26,13 +29,39 @@ int divide_hash_space_for_gpu(unsigned long start, unsigned long end, unsigned l
 
 void divide_hash_space_for_threads(unsigned long start, unsigned long end, cc_interval_t *data, int hash_thread_count) {
 	unsigned long total = end - start;
-	unsigned long chunk = ceil(total / hash_thread_count);
+	unsigned long chunk = floor(total / hash_thread_count);
 	
 	int i = 0;
 	for(; i < hash_thread_count; ++i){
 		data[i].start_point = start + (chunk * i);
 		data[i].end_point = start + ((chunk * (i + 1)) + 1);
 	}
+}
+
+int load_table(char *filename){
+	htable = g_hash_table_new(g_str_hash, g_str_equal);
+	gchar *contents;
+	gsize *size;
+	if(g_file_get_contents((gchar *)filename,&contents,NULL,NULL)){
+		char *line;
+		line = strtok (contents, "\n");
+		int i = 0;
+		while(line != NULL){
+			g_hash_table_insert(htable, (gpointer)line, (gpointer)&found);
+			line = strtok(NULL,"\n");
+			++i;
+		}
+		printf("Loaded hash table with %d entrie(s)\n",i);
+	}
+	else{
+		printf("Failed to read config file\n");
+		return -1;
+	}
+	return 0;
+}
+
+char* get_hash_file(){
+	return (char*) conf_data.hash_file;
 }
 
 long get_work_size(){
