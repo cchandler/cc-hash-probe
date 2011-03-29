@@ -1,12 +1,3 @@
 Example C program that shows how to use multicores to brute-force your way through a hash space if you know credit card numbers are used.
 
-For me on OSX:
-
-nvcc -g -c gpu.cu -m64 -arch sm_12 && g++ -g luhn.c gpu.o -L/usr/local/cuda/lib -lcuda -lcudart -DGPU
-
-For me on Suse Enterprise...
-
-nvcc -g -c gpu.cu -m64 -arch sm_12 && g++ -g luhn.c gpu.o -L/usr/local/cuda/lib64 -lcuda -lcudart -DGPU
-
-
-gcc cc.c -lpthread -lm
+Modify the Makefile to point to your platform's CUDA install.  On OSX the libraries are "fat binaries" and contain the 64 bit equivalent. On Linux you'll need something like "/usr/local/cuda/lib64".

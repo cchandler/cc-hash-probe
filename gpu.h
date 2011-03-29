@@ -1,17 +1,9 @@
+#ifndef GPU_MODULE
+#define GPU_MODULE
 
-const unsigned int blocksize = 52084;
-const unsigned int threadsize = 192;
-const unsigned long SIZE = blocksize * threadsize;
 
 #define HASH_CHUNKS  5
-
-#ifdef CPU
 #define MODE "CPU"
-#endif
-
-#ifdef GPU
-#define MODE "GPU"
-#endif
 
 typedef struct {
 	unsigned int gpuId;
@@ -38,6 +30,6 @@ typedef struct {
 int setupCUDA(cc_gpu_state_t *state);
 int teardownCUDA(cc_gpu_state_t *state);
 int cuda_scan(cc_gpu_state_t *state, unsigned long *intervals, unsigned int *valid, int *hashes);
-unsigned int swapends(unsigned int v);
 int getCudaDeviceCount();
 
+#endif

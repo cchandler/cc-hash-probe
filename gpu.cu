@@ -5,6 +5,7 @@
 #include <cuda_runtime.h>
 
 #include "gpu.h"
+#include "util.h"
 
 /*
 
@@ -288,19 +289,19 @@ int setupCUDA(cc_gpu_state_t *state){
 		exit(-1);
 	}
 	
-	error = cudaMallocPitch((void **)(&(state->d_intervals)), &(state->d_intervals_pitch), blocksize * sizeof(long), 1);
+	error = cudaMallocPitch((void **)(&(state->d_intervals)), &(state->d_intervals_pitch), get_block_size() * sizeof(long), 1);
 	if(error != cudaSuccess){
 		printf("Failed to allocate d_intervals_pitch %d \n", error);
 		return -1;
 	}
 	
-	error = cudaMallocPitch((void **)(&(state->d_valid)), &(state->d_valid_pitch), SIZE * sizeof(int), 1);
+	error = cudaMallocPitch((void **)(&(state->d_valid)), &(state->d_valid_pitch), get_work_size() * sizeof(int), 1);
 	if(error != cudaSuccess){
 		printf("Failed to allocate d_valid_pitch %d \n", error);
 		return -1;
 	}
 	
-	error = cudaMallocPitch((void **)(&(state->d_hash)), &(state->d_hash_pitch), SIZE * sizeof(int) * HASH_CHUNKS, 1);
+	error = cudaMallocPitch((void **)(&(state->d_hash)), &(state->d_hash_pitch), get_work_size() * sizeof(int) * HASH_CHUNKS, 1);
 	if(error != cudaSuccess){
 		printf("Failed to allocate d_hash_pitch %d \n", error);
 		return -1;
@@ -337,23 +338,23 @@ int cuda_scan(cc_gpu_state_t *state, unsigned long *intervals, unsigned int *h_v
 	// error = cudaMemset2D(state->d_intervals, state->d_intervals_pitch, 0, blocksize * sizeof(int), 1);
 	
 	// Move interval data to the GPU
-	error = cudaMemcpy2D(state->d_intervals,state->d_intervals_pitch, intervals, sizeof(int) * blocksize, blocksize * sizeof(int), 1, cudaMemcpyHostToDevice);
+	error = cudaMemcpy2D(state->d_intervals,state->d_intervals_pitch, intervals, sizeof(int) * get_block_size(), get_block_size() * sizeof(int), 1, cudaMemcpyHostToDevice);
 	if(error != cudaSuccess){
 		printf("One of the mem copies or memsets failed %d\n", error);
 		return -1;
 	}
 
 	// Execute the probe and wait for all threads to finish
-	GPUProbe<<< blocksize , threadsize >>>(state->d_intervals, state->d_valid, state->d_valid_pitch, state->d_hash);
+	GPUProbe<<< get_block_size() , get_thread_size() >>>(state->d_intervals, state->d_valid, state->d_valid_pitch, state->d_hash);
 	cudaThreadSynchronize();
 	
 	// Copy the Luhn validity data back to the host
-	error = cudaMemcpy2D(h_valid,sizeof(int) * SIZE, state->d_valid, state->d_valid_pitch, SIZE * sizeof(int), 1, cudaMemcpyDeviceToHost);
+	error = cudaMemcpy2D(h_valid,sizeof(int) * get_work_size(), state->d_valid, state->d_valid_pitch, get_work_size() * sizeof(int), 1, cudaMemcpyDeviceToHost);
 	if(error != cudaSuccess){
 		printf("Failed to copy d_valid from device %d\n",error);
 	}
 	// Copy the Hashes back to the host
-	error = cudaMemcpy2D(h_hashes,sizeof(int) * SIZE * HASH_CHUNKS, state->d_hash, state->d_hash_pitch, SIZE * sizeof(int) * HASH_CHUNKS, 1, cudaMemcpyDeviceToHost);
+	error = cudaMemcpy2D(h_hashes,sizeof(int) * get_work_size() * HASH_CHUNKS, state->d_hash, state->d_hash_pitch, get_work_size() * sizeof(int) * HASH_CHUNKS, 1, cudaMemcpyDeviceToHost);
 	if(error != cudaSuccess){
 		printf("Failed to copy d_hash from device %d\n",error);
 		return -1;

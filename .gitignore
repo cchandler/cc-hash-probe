@@ -1,3 +1,5 @@
 *.so
 *.o
 *.out
+*.dSYM
+hash_probe
