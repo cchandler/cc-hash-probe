@@ -73,7 +73,7 @@ void* process_work(void *threadarg){
 		while( divide_hash_space_for_gpu(start_point,end_point, j * get_thread_size(), intervals) )
 		{	
 			if(j % 10 == 0){
-				printf("Processed %lu\n",j * get_work_size());
+				printf("Processed %lu in thread %d\n",j * get_work_size(), mydata->threadId);
 			}
 
 			cuda_scan(&(mydata->gpu_state),intervals,valid, hashes);
@@ -108,7 +108,7 @@ void* process_work(void *threadarg){
 		
 		while(start_point <= end_point){
 			if(j % 1000000 == 0){
-				printf("Processed %lu\n",j);
+				printf("Processed %lu in thread %d\n",j, mydata->threadId);
 			}
 			
 			unsigned long result = cpu_bit_pack_CC(start_point);
